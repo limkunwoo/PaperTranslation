@@ -1,0 +1,23 @@
+{
+  "name": "paper-translation",
+  "version": "1.0.0",
+  "description": "Academic paper translation and QnA generation tools",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "canvas": "^3.2.1",
+    "cheerio": "^1.2.0",
+    "js-yaml": "^4.1.1",
+    "katex": "^0.16.38",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^3.11.174",
+    "puppeteer": "^24.39.0",
+    "sharp": "^0.34.5"
+  }
+}

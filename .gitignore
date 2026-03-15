@@ -1,0 +1,4 @@
+node_modules/
+output/
+work/*/images/
+*.pdf
