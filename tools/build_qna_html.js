@@ -528,6 +528,78 @@ function parseIntro(md) {
 }
 
 // ---------------------------------------------------------------------------
+// SVG pan/zoom script generator
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns an inline <script> block that adds mouse-wheel zoom and drag-pan
+ * to the SVG inside the wrapper element with id `wrapperId`.
+ * No external libraries required.
+ */
+function buildSvgPanZoomScript(wrapperId) {
+  return `<script>
+(function() {
+  var wrap = document.getElementById('${wrapperId}');
+  if (!wrap) return;
+  var svg = wrap.querySelector('svg');
+  if (!svg) return;
+
+  // Ensure SVG fills the wrapper but stays bounded
+  svg.style.display = 'block';
+  svg.style.maxWidth = '100%';
+  svg.style.cursor = 'grab';
+
+  // State
+  var scale = 1, panX = 0, panY = 0;
+  var dragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+
+  function applyTransform() {
+    svg.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+    svg.style.transformOrigin = '0 0';
+  }
+
+  // Wheel zoom (centred on cursor position relative to wrapper)
+  wrap.addEventListener('wheel', function(e) {
+    e.preventDefault();
+    var rect = wrap.getBoundingClientRect();
+    var mx = e.clientX - rect.left - panX;
+    var my = e.clientY - rect.top  - panY;
+    var delta = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    var newScale = Math.min(Math.max(scale * delta, 0.3), 8);
+    panX -= mx * (newScale - scale);
+    panY -= my * (newScale - scale);
+    scale = newScale;
+    applyTransform();
+  }, { passive: false });
+
+  // Drag pan
+  wrap.addEventListener('mousedown', function(e) {
+    if (e.button !== 0) return;
+    dragging = true;
+    startX = e.clientX; startY = e.clientY;
+    startPanX = panX; startPanY = panY;
+    svg.style.cursor = 'grabbing';
+  });
+  window.addEventListener('mousemove', function(e) {
+    if (!dragging) return;
+    panX = startPanX + (e.clientX - startX);
+    panY = startPanY + (e.clientY - startY);
+    applyTransform();
+  });
+  window.addEventListener('mouseup', function() {
+    if (dragging) { dragging = false; svg.style.cursor = 'grab'; }
+  });
+
+  // Double-click to reset
+  wrap.addEventListener('dblclick', function() {
+    scale = 1; panX = 0; panY = 0;
+    applyTransform();
+  });
+})();
+</script>`;
+}
+
+// ---------------------------------------------------------------------------
 // Build embedded images HTML for a section
 // ---------------------------------------------------------------------------
 function buildDiagramHtml(sectionNum) {
@@ -542,9 +614,12 @@ function buildDiagramHtml(sectionNum) {
     const svgContent = tryRead(svgPath);
     if (svgContent) {
       const cleanSvg = svgContent.replace(/<\?xml[^?]*\?>\s*/, '');
+      const pzId = `svg-pz-${sectionNum}`;
       parts.push(
-        `<div class="diagram">\n${cleanSvg}\n` +
-          `<figcaption>그림 ${sectionNum}: ${meta.svgCaption}</figcaption>\n</div>`
+        `<div class="diagram">\n` +
+        `<div class="svg-pz-wrap" id="${pzId}">\n${cleanSvg}\n</div>\n` +
+        `<figcaption>그림 ${sectionNum}: ${meta.svgCaption}</figcaption>\n</div>\n` +
+        buildSvgPanZoomScript(pzId)
       );
     }
   }
@@ -555,9 +630,12 @@ function buildDiagramHtml(sectionNum) {
     const svgContent2 = tryRead(svgPath2);
     if (svgContent2) {
       const cleanSvg2 = svgContent2.replace(/<\?xml[^?]*\?>\s*/, '');
+      const pzId2 = `svg-pz-${sectionNum}b`;
       parts.push(
-        `<div class="diagram">\n${cleanSvg2}\n` +
-          `<figcaption>그림 ${sectionNum}b: ${meta.svgCaption2}</figcaption>\n</div>`
+        `<div class="diagram">\n` +
+        `<div class="svg-pz-wrap" id="${pzId2}">\n${cleanSvg2}\n</div>\n` +
+        `<figcaption>그림 ${sectionNum}b: ${meta.svgCaption2}</figcaption>\n</div>\n` +
+        buildSvgPanZoomScript(pzId2)
       );
     }
   }
@@ -1676,8 +1754,38 @@ function buildCanvas2dHtml(sectionNum) {
   }
   if (!sceneCode) return '';
 
+  // Per-scene UI configuration
+  const isStepper = meta.canvas2d === 'cst_ast_stepper';
+
+  if (isStepper) {
+    // Stepper uses < > buttons instead of a slider
+    const prevBtnId = `stepper-prev-${sectionNum}`;
+    const nextBtnId = `stepper-next-${sectionNum}`;
+    const figcaptionText = '\uc778\ud130\ub799\ud2f0\ube0c 2D \ubdf0 \u2014 \ud1a0\ud070 \uc2a4\ud2b8\ub9bc \u2192 CST \u2192 AST \ub2e8\uacc4\ubcc4 \ubcc0\ud658';
+    return `<div class="canvas2d-wrapper">
+  <div class="canvas2d-label">\ub2e8\uacc4\ubcc4 \ubcc0\ud658 \uc560\ub2c8\uba54\uc774\uc158 \u2014 \ubc84\ud2bc\uc73c\ub85c \ub2e4\uc74c/\uc774\uc804 \ub2e8\uacc4\ub97c \ud655\uc778\ud558\uc138\uc694</div>
+  <div class="canvas2d-controls stepper-controls">
+    <button id="${prevBtnId}" class="stepper-btn" disabled>\u276e \uc774\uc804</button>
+    <span class="stepper-label" id="${valId}">\uc18c\uc2a4 \ucf54\ub4dc</span>
+    <button id="${nextBtnId}" class="stepper-btn">\ub2e4\uc74c \u276f</button>
+  </div>
+  <canvas id="${canvasId}" class="canvas2d-canvas"></canvas>
+  <div class="canvas2d-info" id="canvas2d-info-${sectionNum}"></div>
+  <figcaption>${figcaptionText}</figcaption>
+</div>
+<script>
+(function() {
+${sceneCode}
+})();
+</script>`;
+  }
+
+  // Non-stepper scenes use slider
+  const labelText = '\uc2ac\ub77c\uc774\ub354: \ubc29\ud5a5 d\uc758 \uac01\ub3c4 \u03b8 \uc870\uc808 | \ubc29\ud5a5 \ubbf8\ubd84\uac12 \uc2e4\uc2dc\uac04 \ud45c\uc2dc';
+  const figcaptionText = '\uc778\ud130\ub799\ud2f0\ube0c 2D \ubdf0 \u2014 \ubc29\ud5a5 \ubbf8\ubd84\uacfc \uadf8\ub798\ub514\uc5b8\ud2b8 \ubc29\ud5a5\uc758 \uad00\uacc4';
+
   return `<div class="canvas2d-wrapper">
-  <div class="canvas2d-label">\uc2ac\ub77c\uc774\ub354: \ubc29\ud5a5 d\uc758 \uac01\ub3c4 \u03b8 \uc870\uc808 | \ubc29\ud5a5 \ubbf8\ubd84\uac12 \uc2e4\uc2dc\uac04 \ud45c\uc2dc</div>
+  <div class="canvas2d-label">${labelText}</div>
   <div class="canvas2d-controls">
     <label>\ubc29\ud5a5 \uac01\ub3c4 \u03b8</label>
     <input type="range" id="${sliderId}" min="0" max="360" value="0" step="1">
@@ -1685,13 +1793,406 @@ function buildCanvas2dHtml(sectionNum) {
   </div>
   <canvas id="${canvasId}" class="canvas2d-canvas"></canvas>
   <div class="canvas2d-info" id="canvas2d-info-${sectionNum}"></div>
-  <figcaption>\uc778\ud130\ub799\ud2f0\ube0c 2D \ubdf0 \u2014 \ubc29\ud5a5 \ubbf8\ubd84\uacfc \uadf8\ub798\ub514\uc5b8\ud2b8 \ubc29\ud5a5\uc758 \uad00\uacc4</figcaption>
+  <figcaption>${figcaptionText}</figcaption>
 </div>
 <script>
 (function() {
 ${sceneCode}
 })();
 </script>`;
+}
+
+/**
+ * Canvas2D scene: CST → AST stepper.
+ * Slider steps through 4 stages:
+ *   0 = Source code
+ *   1 = Token stream
+ *   2 = CST (Parse Tree)
+ *   3 = AST
+ * Example input: message Player { string name = 1; int32 level = 2; }
+ */
+function buildCstAstStepperScene(canvasId, sliderId, valId) {
+  return `
+  var canvas = document.getElementById('${canvasId}');
+  var ctx = canvas.getContext('2d');
+  var infoEl = document.getElementById('canvas2d-info-${canvasId.split('-').pop()}');
+
+  // --- Canvas sizing ---
+  var wrapW = canvas.parentElement.clientWidth - 40;
+  var W = Math.min(720, wrapW);
+  var H = Math.round(W * 0.72);
+  var dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  canvas.style.width = W + 'px';
+  canvas.style.height = H + 'px';
+  ctx.scale(dpr, dpr);
+
+  var STEP_LABELS = [
+    '\uc18c\uc2a4 \ucf54\ub4dc',
+    '\ud1a0\ud070 \uc2a4\ud2b8\ub9bc',
+    'CST (Parse Tree)',
+    'AST'
+  ];
+
+  var STEP_COLORS = ['#1a6b3a', '#b07d00', '#2c5aa0', '#8b1a1a'];
+  var BG = '#fafbfc';
+  var BORDER = '#dde3ea';
+
+  // ── Helper: rounded rect ──
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+  }
+
+  // ── Helper: arrow ──
+  function arrow(x0, y0, x1, y1, color, lw) {
+    var dx = x1 - x0, dy = y1 - y0;
+    var len = Math.sqrt(dx * dx + dy * dy);
+    if (len < 2) return;
+    var ux = dx / len, uy = dy / len;
+    var hl = 9, hw = 5;
+    ctx.strokeStyle = color; ctx.fillStyle = color;
+    ctx.lineWidth = lw || 1.5;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1 - ux * hl, y1 - uy * hl); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x1 - ux * hl + uy * hw, y1 - uy * hl - ux * hw);
+    ctx.lineTo(x1 - ux * hl - uy * hw, y1 - uy * hl + ux * hw);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // ── Helper: text box (node) ──
+  function textBox(text, cx, cy, bgColor, textColor, pad, fontSize) {
+    pad = pad || 6;
+    fontSize = fontSize || 12;
+    ctx.font = 'bold ' + fontSize + 'px \\'Consolas\\', monospace';
+    var tw = ctx.measureText(text).width;
+    var bw = tw + pad * 2, bh = fontSize + pad * 2;
+    roundRect(cx - bw / 2, cy - bh / 2, bw, bh, 5);
+    ctx.fillStyle = bgColor || '#e8f4fd';
+    ctx.fill();
+    ctx.strokeStyle = textColor || '#2c5aa0';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = textColor || '#2c5aa0';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold ' + fontSize + 'px \\'Consolas\\', monospace';
+    ctx.fillText(text, cx, cy);
+    return { cx: cx, cy: cy, w: bw, h: bh };
+  }
+
+  // ── Step 0: Source code ──
+  function drawStep0() {
+    ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+
+    // Title
+    ctx.fillStyle = '#555'; ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('\ub2e8\uacc4 0 \u2014 \uc18c\uc2a4 \ucf54\ub4dc (\uc785\ub825)', W / 2, 26);
+
+    // Code box
+    var lines = [
+      'message Player {',
+      '    string name  = 1;',
+      '    int32  level = 2;',
+      '}'
+    ];
+    var bx = W * 0.1, by = 50, bw = W * 0.8, bh = lines.length * 24 + 20;
+    roundRect(bx, by, bw, bh, 8);
+    ctx.fillStyle = '#1e1e2e'; ctx.fill();
+    ctx.strokeStyle = '#444466'; ctx.lineWidth = 1.5; ctx.stroke();
+
+    var kw = ['message', 'string', 'int32'];
+    var kwColor = '#569cd6';
+    var strColor = '#ce9178';
+    var numColor = '#b5cea8';
+    var defColor = '#dcdcaa';
+
+    lines.forEach(function(line, li) {
+      var lx = bx + 18;
+      var ly = by + 20 + li * 24;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.font = '13px \\'Consolas\\', monospace';
+
+      // Simple syntax highlight
+      var tokens2 = line.split(/(\bstring\b|\bint32\b|\bmessage\b|\{|\}|=|;)/);
+      var cx2 = lx;
+      tokens2.forEach(function(tok) {
+        var col = '#d4d4d4';
+        if (tok === 'message') col = kwColor;
+        else if (tok === 'string' || tok === 'int32') col = kwColor;
+        else if (tok === '{' || tok === '}') col = '#ffd700';
+        else if (tok === '=' || tok === ';') col = '#d4d4d4';
+        else if (/^\d+$/.test(tok.trim())) col = numColor;
+        else if (/^[A-Z]/.test(tok.trim())) col = defColor;
+        ctx.fillStyle = col;
+        ctx.fillText(tok, cx2, ly);
+        cx2 += ctx.measureText(tok).width;
+      });
+    });
+
+    // Label below
+    ctx.fillStyle = '#888'; ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('.proto \ud30c\uc77c \uc6d0\ubcf8 \ud14d\uc2a4\ud2b8 \u2014 \uc0ac\ub78c\uc774 \uc791\uc131', W / 2, by + bh + 18);
+  }
+
+  // ── Step 1: Token stream ──
+  function drawStep1() {
+    ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#555'; ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('\ub2e8\uacc4 1 \u2014 \ud1a0\ud070 \uc2a4\ud2b8\ub9bc (ANTLR Lexer \ucd9c\ub825)', W / 2, 26);
+
+    var tokens3 = [
+      { t: 'MESSAGE',            color: '#569cd6', bg: '#1e3a5f' },
+      { t: 'IDENTIFIER("Player")', color: '#dcdcaa', bg: '#2a2a1e' },
+      { t: 'LC',                 color: '#ffd700', bg: '#2a2000' },
+      { t: 'STRING',             color: '#569cd6', bg: '#1e3a5f' },
+      { t: 'IDENTIFIER("name")', color: '#dcdcaa', bg: '#2a2a1e' },
+      { t: 'EQ',                 color: '#d4d4d4', bg: '#2a2a2a' },
+      { t: 'INT_LIT("1")',       color: '#b5cea8', bg: '#1a2a1a' },
+      { t: 'SEMI',               color: '#d4d4d4', bg: '#2a2a2a' },
+      { t: 'INT32',              color: '#569cd6', bg: '#1e3a5f' },
+      { t: 'IDENTIFIER("level")',color: '#dcdcaa', bg: '#2a2a1e' },
+      { t: 'EQ',                 color: '#d4d4d4', bg: '#2a2a2a' },
+      { t: 'INT_LIT("2")',       color: '#b5cea8', bg: '#1a2a1a' },
+      { t: 'SEMI',               color: '#d4d4d4', bg: '#2a2a2a' },
+      { t: 'RC',                 color: '#ffd700', bg: '#2a2000' },
+      { t: 'EOF',                color: '#888',    bg: '#222' }
+    ];
+
+    // Layout: wrap into rows
+    var margin = 18, gap = 6, rowH = 34, startY = 55;
+    var x = margin, y = startY, rowMax = W - margin;
+    ctx.font = '11px \\'Consolas\\', monospace';
+
+    tokens3.forEach(function(tok) {
+      var tw = ctx.measureText(tok.t).width + 14;
+      if (x + tw > rowMax && x > margin) { x = margin; y += rowH + gap; }
+      roundRect(x, y, tw, rowH - 6, 5);
+      ctx.fillStyle = tok.bg; ctx.fill();
+      ctx.strokeStyle = tok.color; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.fillStyle = tok.color;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(tok.t, x + tw / 2, y + (rowH - 6) / 2);
+      x += tw + gap;
+    });
+
+    ctx.fillStyle = '#888'; ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('ANTLR Lexer\uac00 \uc18c\uc2a4\ub97c \ud1a0\ud070 \ubc30\uc5f4\ub85c \ubd84\ub9ac \u2014 \uad6c\ub450\uc810(EQ, SEMI)\ub3c4 \ud3ec\ud568', W / 2, H - 14);
+  }
+
+  // ── Step 2: CST ──
+  function drawStep2() {
+    ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#555'; ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('\ub2e8\uacc4 2 \u2014 CST (Parse Tree) \u2014 ANTLR Parser \ucd9c\ub825', W / 2, 20);
+
+    // Node color scheme
+    var ruleC  = { bg: '#e8f0fd', border: '#2c5aa0', text: '#1a3a6e' };   // rule node (blue)
+    var tokC   = { bg: '#fef9e7', border: '#b07d00', text: '#7a5200' };   // terminal token (amber)
+    var semC   = { bg: '#f0f0f0', border: '#999',    text: '#666' };      // semantic action (gray)
+
+    var fs = 11; // font size
+    function node(label, cx, cy, scheme) {
+      return textBox(label, cx, cy, scheme.bg, scheme.border, 5, fs);
+    }
+    function conn(x0, y0, x1, y1) {
+      arrow(x0, y0, x1, y1, '#aaa', 1);
+    }
+
+    // Layout: two independent sub-trees side by side for clarity
+    // Left sub-tree: messageName chain  Right sub-tree: messageBody chain
+    // Row Y positions (generous vertical spacing)
+    var r0 = 40, r1 = 95, r2 = 148, r3 = 200, r4 = 252, r5 = 304;
+
+    // ── root: messageDef ──
+    node('messageDef', W/2, r0, ruleC);
+
+    // ── Level-1 children: spread evenly across canvas width ──
+    // MESSAGE(left), messageName, doMsgNameDef(center), messageBody(right)
+    var x_kw   = W * 0.09;
+    var x_mn   = W * 0.28;
+    var x_sem  = W * 0.50;
+    var x_mb   = W * 0.78;
+
+    node('MESSAGE',         x_kw,  r1, tokC);
+    node('messageName',     x_mn,  r1, ruleC);
+    node('doMsgNameDef',    x_sem, r1, semC);
+    node('messageBody',     x_mb,  r1, ruleC);
+
+    conn(W/2, r0+12, x_kw,  r1-12);
+    conn(W/2, r0+12, x_mn,  r1-12);
+    conn(W/2, r0+12, x_sem, r1-12);
+    conn(W/2, r0+12, x_mb,  r1-12);
+
+    // ── messageName → ident → ID("Player") ──
+    node('ident',        x_mn, r2, ruleC);
+    conn(x_mn, r1+12,   x_mn, r2-12);
+    node('ID("Player")', x_mn, r3, tokC);
+    conn(x_mn, r2+12,   x_mn, r3-12);
+
+    // ── messageBody children: LC, doEnterBlock, field[0], field[1], RC ──
+    // Spread within right half [0.55 .. 0.99]
+    var x_lc   = W * 0.55;
+    var x_de   = W * 0.64;
+    var x_me0  = W * 0.75;
+    var x_me1  = W * 0.88;
+    var x_rc   = W * 0.98;
+
+    node('LC',               x_lc,  r2, tokC);
+    node('doEnterBlock',     x_de,  r2, semC);
+    node('messageElement[0]',x_me0, r2, ruleC);
+    node('messageElement[1]',x_me1, r2, ruleC);
+    node('RC',               x_rc,  r3, tokC);
+
+    conn(x_mb, r1+12, x_lc,  r2-12);
+    conn(x_mb, r1+12, x_de,  r2-12);
+    conn(x_mb, r1+12, x_me0, r2-12);
+    conn(x_mb, r1+12, x_me1, r2-12);
+    conn(x_mb, r1+12, x_rc,  r3-12);
+
+    // ── field[0]: type_(STRING) fieldLabel fieldName EQ INT SEMI ──
+    // Anchored under x_me0; leaf tokens spread from 0.50 to 0.86
+    node('field', x_me0, r3, ruleC);
+    conn(x_me0, r2+12, x_me0, r3-12);
+
+    var fx = [W*0.50, W*0.60, W*0.68, W*0.77, W*0.86];
+    var fl = ['STRING', 'ID("name")', 'EQ', 'INT("1")', 'SEMI'];
+    fl.forEach(function(lbl, i) {
+      node(lbl, fx[i], r4, tokC);
+      conn(x_me0, r3+12, fx[i], r4-12);
+    });
+
+    // ── field[1]: simplified ──
+    node('field(…level…)', x_me1, r3, ruleC);
+    conn(x_me1, r2+12, x_me1, r3-12);
+
+    // Note
+    ctx.fillStyle = '#999'; ctx.font = '10px sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('\u25a0 \ud30c\ub780 = \ubb38\ubc95 \uaddc\uce59 \ub178\ub4dc  \u25a1 \ud669\uc0c9 = \ud130\ubbf8\ub110 \ud1a0\ud070  \u25a1 \ud68c\uc0c9 = \uc2dc\ub9e8\ud2f1 \uc561\uc158', 12, H - 14);
+  }
+
+  // ── Step 3: AST ──
+  function drawStep3() {
+    ctx.fillStyle = BG; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = '#555'; ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText('\ub2e8\uacc4 3 \u2014 AST (\ucd94\uc0c1 \uad6c\ubb38 \ud2b8\ub9ac) \u2014 Visitor \ud328\ud134 \ubcc0\ud658 \uacb0\uacfc', W / 2, 20);
+
+    var astC  = { bg: '#fde8e8', border: '#8b1a1a', text: '#8b1a1a' };
+    var leafC = { bg: '#fff5e6', border: '#7a5200', text: '#7a5200' };
+    var fs = 12;
+
+    function node(label, cx, cy, scheme) {
+      return textBox(label, cx, cy, scheme.bg, scheme.border, 7, fs);
+    }
+    function conn(x0, y0, x1, y1) {
+      arrow(x0, y0, x1, y1, '#c08080', 1.5);
+    }
+
+    var r0 = 55, r1 = 125, r2 = 210, r3 = 285;
+
+    // MessageNode (root)
+    node('MessageNode', W/2, r0, astC);
+
+    // name field (left)
+    node('name: "Player"', W*0.28, r1, leafC);
+    conn(W/2, r0+16, W*0.28, r1-16);
+
+    // fields array (right)
+    node('fields: [...]', W*0.72, r1, astC);
+    conn(W/2, r0+16, W*0.72, r1-16);
+
+    // Two FieldNodes
+    node('FieldNode', W*0.35, r2, astC);
+    node('FieldNode', W*0.65, r2, astC);
+    conn(W*0.72, r1+16, W*0.35, r2-16);
+    conn(W*0.72, r1+16, W*0.65, r2-16);
+
+    // FieldNode[0] leaves
+    var lx0 = W * 0.35;
+    node('label: null',    lx0 - 90, r3, leafC);
+    node('type: "string"', lx0 - 30, r3, leafC);
+    node('name: "name"',   lx0 + 30, r3, leafC);
+    node('number: 1',      lx0 + 90, r3, leafC);
+    conn(lx0, r2+16, lx0 - 90, r3-14);
+    conn(lx0, r2+16, lx0 - 30, r3-14);
+    conn(lx0, r2+16, lx0 + 30, r3-14);
+    conn(lx0, r2+16, lx0 + 90, r3-14);
+
+    // FieldNode[1] leaves
+    var lx1 = W * 0.65;
+    node('label: null',    lx1 - 90, r3, leafC);
+    node('type: "int32"',  lx1 - 30, r3, leafC);
+    node('name: "level"',  lx1 + 30, r3, leafC);
+    node('number: 2',      lx1 + 90, r3, leafC);
+    conn(lx1, r2+16, lx1 - 90, r3-14);
+    conn(lx1, r2+16, lx1 - 30, r3-14);
+    conn(lx1, r2+16, lx1 + 30, r3-14);
+    conn(lx1, r2+16, lx1 + 90, r3-14);
+
+    ctx.fillStyle = '#888'; ctx.font = '11px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('CST 29\uac1c \ub178\ub4dc \u2192 AST 3\uac1c \ub178\ub4dc\ub85c \uc555\ucd95 \u2014 \uad6c\ub450\uc810/\ub798\ud37c \uaddc\uce59 \uc81c\uac70', W / 2, H - 14);
+  }
+
+  var stepFns = [drawStep0, drawStep1, drawStep2, drawStep3];
+  var currentStep = 0;
+
+  function draw(step) {
+    currentStep = step;
+    stepFns[step]();
+    // Update info panel
+    var stepColors = ['#1a6b3a', '#b07d00', '#2c5aa0', '#8b1a1a'];
+    var descs = [
+      '<strong style="color:#1a6b3a">\uc18c\uc2a4 \ucf54\ub4dc</strong>: .proto \ud30c\uc77c \uc6d0\ubcf8. \uc0ac\ub78c\uc774 \uc791\uc131\ud55c \ud14d\uc2a4\ud2b8.',
+      '<strong style="color:#b07d00">\ud1a0\ud070 \uc2a4\ud2b8\ub9bc</strong>: ANTLR Lexer\uac00 \uc18c\uc2a4\ub97c \ud1a0\ud070 \ubc30\uc5f4\ub85c \ubd84\ub9ac. \uad6c\ub450\uc810(EQ, SEMI)\ub3c4 \ud1a0\ud070.',
+      '<strong style="color:#2c5aa0">CST (Parse Tree)</strong>: ANTLR Parser\uac00 \uc790\ub3d9 \uc0dd\uc131. \ubaa8\ub4e0 \ubb38\ubc95 \uaddc\uce59\uc774 \ub178\ub4dc\ub85c \ud45c\ud604. \ub798\ud37c \uaddc\uce59\uacfc \uad6c\ub450\uc810 \ud3ec\ud568.',
+      '<strong style="color:#8b1a1a">AST</strong>: Visitor \ud328\ud134\uc73c\ub85c \uc218\ub3d9 \ubcc0\ud658. \uc758\ubbf8 \uc788\ub294 \ub178\ub4dc\ub9cc \ub0a8\uae40. \ucf54\ub4dc \uc0dd\uc131\uae30\uc758 \uc785\ub825.'
+    ];
+    if (infoEl) infoEl.innerHTML = '<div style="padding:6px 10px; font-size:0.92em; color:#444;">' + descs[step] + '</div>';
+  }
+
+  // Button event (prev / next)
+  var prevBtn = document.getElementById('stepper-prev-${canvasId.split('-').pop()}');
+  var nextBtn = document.getElementById('stepper-next-${canvasId.split('-').pop()}');
+  var labelEl = document.getElementById('${valId}');
+  var stepNames = ['\uc18c\uc2a4 \ucf54\ub4dc', '\ud1a0\ud070 \uc2a4\ud2b8\ub9bc', 'CST', 'AST'];
+  var TOTAL = 4;
+
+  function updateButtons() {
+    prevBtn.disabled = currentStep === 0;
+    nextBtn.disabled = currentStep === TOTAL - 1;
+    labelEl.textContent = stepNames[currentStep];
+  }
+
+  prevBtn.addEventListener('click', function() {
+    if (currentStep > 0) { draw(currentStep - 1); updateButtons(); }
+  });
+  nextBtn.addEventListener('click', function() {
+    if (currentStep < TOTAL - 1) { draw(currentStep + 1); updateButtons(); }
+  });
+
+  // Initial
+  updateButtons();
+  draw(0);
+`;
 }
 
 /**
@@ -2062,6 +2563,15 @@ tr:nth-child(even) { background: #fafafa; }
   border: 1px solid #e0e0e0; border-radius: 8px; padding: 1em;
 }
 .diagram svg { max-width: 100%; height: auto; }
+
+/* ---- SVG pan/zoom wrapper ---- */
+.svg-pz-wrap {
+  overflow: hidden; position: relative;
+  cursor: grab; border-radius: 4px;
+  user-select: none; -webkit-user-select: none;
+}
+.svg-pz-wrap:active { cursor: grabbing; }
+.svg-pz-wrap svg { display: block; max-width: 100%; transition: none; }
 figcaption {
   font-size: 0.9em; color: #666;
   margin-top: 0.5em; font-style: italic;
@@ -2204,6 +2714,23 @@ strong { color: #1a3a6e; }
 }
 .extra-analysis-body p { margin: 0.5em 0; }
 .extra-analysis-body table { font-size: 0.93em; }
+
+/* ---- Stepper buttons (prev / next) ---- */
+.stepper-controls {
+  display: flex; align-items: center; justify-content: center;
+  gap: 1em; margin: 0.6em 0 0.8em;
+}
+.stepper-btn {
+  background: #2c5aa0; color: white; border: none;
+  border-radius: 6px; padding: 0.45em 1.4em; cursor: pointer;
+  font-size: 1em; font-weight: bold; transition: background 0.2s;
+}
+.stepper-btn:hover:not(:disabled) { background: #1a3a6e; }
+.stepper-btn:disabled { background: #aaa; cursor: not-allowed; }
+.stepper-label {
+  display: inline-block; min-width: 9em; text-align: center;
+  font-weight: bold; color: #2c5aa0; font-size: 1.05em;
+}
 
 /* ---- Responsive ---- */
 @media (max-width: 640px) {
