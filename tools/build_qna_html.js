@@ -65,6 +65,16 @@ if (MATHJAX_SRC) {
   console.log('[build_qna_html] MathJax vendor file not found — using CDN fallback');
 }
 
+// D3.js v7 (offline, self-contained)
+const D3_SRC = tryRead(path.join(VENDOR_DIR, 'd3.min.js'));
+const HAS_D3 = !!D3_SRC;
+if (HAS_D3) {
+  console.log('[build_qna_html] D3.js vendor file loaded (' +
+    (D3_SRC.length / 1024).toFixed(0) + ' KB)');
+} else {
+  console.log('[build_qna_html] D3.js vendor file not found — skipping D3 tree views');
+}
+
 // ---------------------------------------------------------------------------
 // QNA3D shared helper functions (inlined into HTML <head>)
 // ---------------------------------------------------------------------------
@@ -125,6 +135,137 @@ window.QNA3D = {
       (a.y + b.y + c.y) / 3,
       (a.z + b.z + c.z) / 3
     );
+  }
+};
+`;
+
+// ---------------------------------------------------------------------------
+// D3Tree shared helper — renders a tree with d3.hierarchy + d3.tree
+// Inlined into HTML <head> alongside D3.js vendor script.
+// Scene plugins call D3Tree.render(containerId, tipId, treeData, colors).
+// ---------------------------------------------------------------------------
+const D3TREE_HELPERS = `
+window.D3Tree = {
+  /** Measure approximate text width (px) for a given label. */
+  _textWidth: function(label) {
+    return label.length * 7.8 + 24;
+  },
+
+  /**
+   * Render a tree into a container element.
+   * @param {string} containerId - DOM id of the container div
+   * @param {string} tipId       - DOM id of the tooltip div
+   * @param {object} treeData    - hierarchical data {name, cat, children?}
+   * @param {object} colors      - {cat: {bg, border, label}} colour map
+   */
+  render: function(containerId, tipId, treeData, colors) {
+    var container = document.getElementById(containerId);
+    var tip = document.getElementById(tipId);
+    if (!container) return;
+
+    var root = d3.hierarchy(treeData);
+    var nodeH = 72;
+    var self = this;
+
+    var layout = d3.tree()
+      .nodeSize([120, nodeH])
+      .separation(function(a, b) {
+        var wA = self._textWidth(a.data.name);
+        var wB = self._textWidth(b.data.name);
+        var base = a.parent === b.parent ? 1 : 1.2;
+        return Math.max(base, (wA + wB) / 2 / 120 + 0.15);
+      });
+    layout(root);
+
+    // Compute bounding box
+    var x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    root.each(function(d) {
+      var hw = self._textWidth(d.data.name) / 2;
+      if (d.x - hw < x0) x0 = d.x - hw;
+      if (d.x + hw > x1) x1 = d.x + hw;
+      if (d.y - 18 < y0) y0 = d.y - 18;
+      if (d.y + 18 > y1) y1 = d.y + 18;
+    });
+    var pad = 20;
+    x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
+    var vw = x1 - x0, vh = y1 - y0;
+
+    var svg = d3.select(container).append('svg')
+      .attr('viewBox', x0 + ' ' + y0 + ' ' + vw + ' ' + vh)
+      .style('width', '100%')
+      .style('height', 'auto')
+      .style('min-height', '180px')
+      .style('max-height', '420px')
+      .style('cursor', 'grab');
+
+    var g = svg.append('g');
+
+    // Zoom behaviour
+    var zoom = d3.zoom()
+      .scaleExtent([0.3, 3])
+      .on('zoom', function(event) {
+        g.attr('transform', event.transform);
+        svg.style('cursor', 'grabbing');
+      })
+      .on('end', function() { svg.style('cursor', 'grab'); });
+    svg.call(zoom);
+
+    // Links
+    g.selectAll('.d3tree-link')
+      .data(root.links())
+      .join('path')
+      .attr('class', 'd3tree-link')
+      .attr('fill', 'none')
+      .attr('stroke', '#aaa')
+      .attr('stroke-width', 1.5)
+      .attr('d', function(d) {
+        return 'M' + d.source.x + ',' + d.source.y +
+          'C' + d.source.x + ',' + (d.source.y + d.target.y) / 2 +
+          ' ' + d.target.x + ',' + (d.source.y + d.target.y) / 2 +
+          ' ' + d.target.x + ',' + d.target.y;
+      });
+
+    // Nodes
+    var node = g.selectAll('.d3tree-node')
+      .data(root.descendants())
+      .join('g')
+      .attr('class', 'd3tree-node')
+      .attr('transform', function(d) { return 'translate(' + d.x + ',' + d.y + ')'; });
+
+    node.append('rect')
+      .attr('rx', 6).attr('ry', 6)
+      .attr('x', function(d) { return -self._textWidth(d.data.name) / 2; })
+      .attr('y', -14)
+      .attr('width', function(d) { return self._textWidth(d.data.name); })
+      .attr('height', 28)
+      .attr('fill', function(d) { return (colors[d.data.cat] || {}).bg || '#fff'; })
+      .attr('stroke', function(d) { return (colors[d.data.cat] || {}).border || '#999'; })
+      .attr('stroke-width', 1.5)
+      .style('cursor', 'pointer')
+      .style('filter', 'drop-shadow(0 1px 2px rgba(0,0,0,0.08))')
+      .on('mouseenter', function(event, d) {
+        d3.select(this).attr('stroke-width', 3)
+          .style('filter', 'drop-shadow(0 2px 6px rgba(0,0,0,0.2))');
+        if (tip) {
+          var catInfo = colors[d.data.cat];
+          tip.textContent = d.data.name + (catInfo ? ' — ' + catInfo.label : '');
+          tip.style.opacity = '1';
+        }
+      })
+      .on('mouseleave', function() {
+        d3.select(this).attr('stroke-width', 1.5)
+          .style('filter', 'drop-shadow(0 1px 2px rgba(0,0,0,0.08))');
+        if (tip) tip.style.opacity = '0';
+      });
+
+    node.append('text')
+      .attr('text-anchor', 'middle')
+      .attr('dy', '0.35em')
+      .attr('font-size', '12px')
+      .attr('font-family', "'Consolas','Courier New',monospace")
+      .attr('fill', '#222')
+      .attr('pointer-events', 'none')
+      .text(function(d) { return d.data.name; });
   }
 };
 `;
@@ -1111,6 +1252,57 @@ ${sceneCode}
 }
 
 // ---------------------------------------------------------------------------
+// D3 Tree interactive view builder
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a D3.js interactive tree visualization for a given section.
+ * Dynamically loads scene plugin from <input_dir>/scenes/<scene_id>.js.
+ * Returns empty string if section has no d3tree field or scene not found.
+ */
+function buildD3TreeHtml(sectionNum) {
+  const meta = SECTION_META[sectionNum];
+  if (!meta || !meta.d3tree) return '';
+  if (!HAS_D3) {
+    console.warn(`[build_qna_html] D3.js vendor not loaded — skipping d3tree for section ${sectionNum}`);
+    return '';
+  }
+
+  const sceneId = meta.d3tree;
+  const scene = loadScene(sceneId);
+  if (!scene || scene.type !== 'd3tree') {
+    console.warn(`[build_qna_html] D3Tree scene '${sceneId}' not found in ${SCENE_DIR}`);
+    return '';
+  }
+
+  const N = sectionNum;
+  const ids = {
+    wrapper: `d3tree-${N}`,
+    panel0:  `d3tree-${N}-0`,
+    panel1:  `d3tree-${N}-1`,
+    tip0:    `d3tree-tip-${N}-0`,
+    tip1:    `d3tree-tip-${N}-1`,
+    legend:  `d3tree-legend-${N}`
+  };
+
+  const innerHtml = scene.html(ids);
+  const sceneCode = scene.build(ids);
+  if (!sceneCode) return '';
+
+  const captionText = meta.svgCaption || '';
+
+  return `<div class="d3tree-outer-wrapper">
+${innerHtml}
+  <figcaption>D3.js 인터랙티브 트리 — ${captionText}</figcaption>
+</div>
+<script>
+(function() {
+${sceneCode}
+})();
+</script>`;
+}
+
+// ---------------------------------------------------------------------------
 // HTML template
 // ---------------------------------------------------------------------------
 function buildHtml(title, subtitle, tocHtml, sectionsHtml) {
@@ -1119,6 +1311,12 @@ function buildHtml(title, subtitle, tocHtml, sectionsHtml) {
     ? `<script>\n// Three.js r137 (inlined)\n${THREEJS_SRC}\n</script>\n` +
       `<script>\n// OrbitControls r137 (inlined)\n${ORBIT_SRC}\n</script>\n` +
       `<script>\n// QNA3D shared helpers\n${QNA3D_HELPERS}\n</script>`
+    : '';
+
+  // Optionally inline D3.js + D3Tree helpers
+  const d3Scripts = HAS_D3
+    ? `<script>\n// D3.js v7 (inlined)\n${D3_SRC}\n</script>\n` +
+      `<script>\n// D3Tree shared helpers\n${D3TREE_HELPERS}\n</script>`
     : '';
 
   // MathJax: prefer inlined vendor file, fallback to CDN
@@ -1372,6 +1570,33 @@ strong { color: #1a3a6e; }
   font-weight: bold; color: #2c5aa0; font-size: 1.05em;
 }
 
+/* ---- D3 Tree interactive view ---- */
+.d3tree-outer-wrapper {
+  text-align: center; margin: 1.5em 0; background: white;
+  border: 1px solid #e0e0e0; border-radius: 8px; padding: 1em;
+}
+.d3tree-wrapper { width: 100%; }
+.d3tree-pair {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  justify-content: center;
+}
+.d3tree-panel {
+  flex: 1 1 380px; min-width: 300px; max-width: 100%;
+}
+.d3tree-container {
+  border: 1px solid #e0e0e0; border-radius: 6px;
+  background: #fafafa; overflow: hidden;
+}
+.d3tree-tip {
+  font-size: 0.82em; color: #555; min-height: 1.4em;
+  text-align: center; margin-top: 4px;
+  opacity: 0; transition: opacity 0.2s;
+}
+.d3tree-legend {
+  text-align: center; margin-top: 10px; padding: 6px 0;
+  border-top: 1px solid #eee;
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 640px) {
   body { padding: 1em; }
@@ -1382,6 +1607,7 @@ strong { color: #1a3a6e; }
 }
 </style>
 ${threejsScripts}
+${d3Scripts}
 </head>
 <body>
 
@@ -1428,15 +1654,17 @@ function main() {
       const diagramHtml = buildDiagramHtml(s.num);
       const threejsHtml = buildThreejsHtml(s.num);
       const canvas2dHtml = buildCanvas2dHtml(s.num);
+      const d3treeHtml = buildD3TreeHtml(s.num);
       const bodyHtml = markdownToHtml(s.body);
 
       // Insert diagram HTML right after the answer heading if present.
       // Three.js canvas goes right after the diagram(s).
       // Canvas2D goes after Three.js.
+      // D3 Tree goes after Canvas2D.
       let combined;
       const answerHeadingTag = '<h3>답변</h3>';
       const answerIdx = bodyHtml.indexOf(answerHeadingTag);
-      const mediaHtml = [diagramHtml, threejsHtml, canvas2dHtml].filter(Boolean).join('\n');
+      const mediaHtml = [diagramHtml, threejsHtml, canvas2dHtml, d3treeHtml].filter(Boolean).join('\n');
       if (answerIdx >= 0 && mediaHtml) {
         const insertPos = answerIdx + answerHeadingTag.length;
         combined =
