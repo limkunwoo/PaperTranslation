@@ -2,8 +2,11 @@
 /**
  * build_qna_html.js
  *
- * Converts the QnA markdown (논문_QnA.md) into a self-contained HTML document
+ * Converts a QnA markdown file into a self-contained HTML document
  * with embedded SVG diagrams and MathJax support.
+ *
+ * Supports multiple papers via per-paper SECTION_META mappings.
+ * The appropriate mapping is selected based on the input filename.
  *
  * Usage:
  *   node build_qna_html.js <input.md> [output.html] [image_dir]
@@ -127,110 +130,12 @@ window.QNA3D = {
 `;
 
 // ---------------------------------------------------------------------------
-// Section → image mapping
+// Section → image mapping — loaded from <input_basename>.meta.json
 // ---------------------------------------------------------------------------
-const SECTION_META = {
-  1: {
-    svg: 'constraints_comparison.svg',
-    png: null,
-    svgCaption: '등식 제약 vs 부등식 제약 비교',
-    title: '등식/부등식 제약',
-  },
-  2: {
-    svg: 'stick_model_grid.svg',
-    png: null,
-    svgCaption: '스틱 모델 격자 — 구조·전단·굽힘 스틱 연결',
-    title: '스틱 모델',
-  },
-  3: {
-    svg: 'two_skip_spring.svg',
-    png: null,
-    svgCaption: '두 칸 건너 스프링에 의한 굽힘 저항 원리',
-    title: '질량-스프링 모델과 두 칸 건너 스프링',
-  },
-  4: {
-    svg: 'winged_triangle_pair.svg',
-    svg2: 'cloth_buckling.svg',
-    png: null,
-    svgCaption: '날개형 삼각형 쌍 (Winged Triangle Pair)',
-    svgCaption2: '천 좌굴 (Cloth Buckling) — 압축에 의한 주름 형성',
-    title: '삼각형 메시 확장과 날개형 삼각형 쌍',
-    threejs: 'winged_triangle_pair',
-  },
-  5: {
-    svg: 'dihedral_angle.svg',
-    png: null,
-    svgCaption: '이면각 (Dihedral Angle) 정의',
-    title: '이면각',
-    threejs: 'dihedral_angle',
-  },
-  6: {
-    svg: 'virtual_tetrahedron.svg',
-    png: null,
-    svgCaption: '가상 사면체를 이용한 굽힘 제약 모델',
-    title: '[VMT06]과 [THMG04]의 굽힘 모델',
-  },
-  7: {
-    svg: null,
-    png: null,
-    svgCaption: null,
-    title: '모드 분석',
-  },
-  8: {
-    svg: 'gradient_arrows.svg',
-    png: null,
-    svgCaption: '편미분 ∂φ/∂pᵢ — 각 정점의 그래디언트 방향',
-    title: '편미분 ∂φ/∂pᵢ',
-    threejs: 'gradient_arrows',
-  },
-  10: {
-    svg: null,
-    png: null,
-    svgCaption: null,
-    title: '그래디언트 = 가장 빠른 변화 방향',
-    canvas2d: 'gradient_direction',
-  },
-  11: {
-    svg: 'stretching_comparison.svg',
-    svg2: 'arccos_reflection.svg',
-    png: null,
-    svgCaption: '스틱 모델 vs 이면각 모델 — 신장 독립성 비교',
-    svgCaption2: 'arccos 범위 문제 — 국부 반사(reflection) 평형',
-    title: '이면각 굽힘 모델의 장점과 arccos 범위 문제',
-    threejs: 'arccos_reflection',
-  },
-  12: {
-    svg: 'triangle_bending_constraint.svg',
-    png: null,
-    svgCaption: '삼각형 굽힘 제약 — 무게중심 거리 기반 곡률 제어',
-    title: '삼각형 굽힘 제약의 기하학적 의미 (수식 5)',
-  },
-  13: {
-    svg: null,
-    png: null,
-    svgCaption: null,
-    title: 'PBD 강성 보정 — 수식 (6)의 유도',
-  },
-  14: {
-    svg: null,
-    png: null,
-    svgCaption: null,
-    title: '역질량 가중과 운동량 보존 (수식 7–9)',
-  },
-  15: {
-    svg: 'position_correction_derivation.svg',
-    png: null,
-    svgCaption: '위치 보정 유도 — 등질량 붕괴에서 역질량 가중까지',
-    title: '위치 보정 수식 (9)의 기하학적 유도',
-  },
-  16: {
-    svg: 'constraint_generation_comparison.svg',
-    png: null,
-    svgCaption: '제약 조건 생성 방법 비교 — 모서리 기반 vs 꼭짓점 기반',
-    title: '삼각형 메시에서 굽힘 제약 생성 — 모서리 vs 꼭짓점 기반',
-    threejs: 'constraint_generation',
-  },
-};
+const metaJsonPath = path.join(INPUT_DIR, `${inputBasename}.meta.json`);
+const SECTION_META = fs.existsSync(metaJsonPath)
+  ? JSON.parse(fs.readFileSync(metaJsonPath, 'utf-8'))
+  : {};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1766,6 +1671,8 @@ function buildCanvas2dHtml(sectionNum) {
 
   if (meta.canvas2d === 'gradient_direction') {
     sceneCode = buildGradientDirectionScene(canvasId, sliderId, valId);
+  } else if (meta.canvas2d === 'cst_ast_stepper') {
+    sceneCode = buildCstAstStepperScene(canvasId, sliderId, valId);
   }
   if (!sceneCode) return '';
 

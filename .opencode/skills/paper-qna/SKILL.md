@@ -21,21 +21,28 @@ metadata:
 ## 출력 아키텍처
 
 ```
-ClothSimulation/qna/논문_QnA.md (Markdown 원본)
+ClothSimulation/qna/<paper>_QnA.md      (Markdown 원본)
     +
-ClothSimulation/qna/images/ (SVG 다이어그램 + PNG)
+ClothSimulation/qna/<paper>_QnA.meta.json  (섹션별 이미지 매핑 — 논문마다 별도)
     +
-PaperTranslation/tools/vendor/ (Three.js r137 UMD + MathJax 3 tex-svg)
+ClothSimulation/qna/images/             (SVG 다이어그램 + PNG — 논문 간 공유)
+    +
+PaperTranslation/tools/vendor/          (Three.js r137 UMD + MathJax 3 tex-svg)
     ↓
 PaperTranslation/tools/build_qna_html.js
     ↓
-ClothSimulation/qna/논문_QnA.html (자체 완결형 HTML — SVG + Three.js 3D + MathJax)
+ClothSimulation/qna/<paper>_QnA.html    (자체 완결형 HTML)
 ```
 
 **빌드 명령:**
 ```bash
+# Bending 논문
 node D:/MyProjects/PaperTranslation/tools/build_qna_html.js "D:/MyProjects/ClothSimulation/qna/논문_QnA.md"
+# PBD 논문
+node D:/MyProjects/PaperTranslation/tools/build_qna_html.js "D:/MyProjects/ClothSimulation/qna/PBD_QnA.md"
 ```
+
+`build_qna_html.js`는 `<input_basename>.meta.json`을 자동으로 찾아 `SECTION_META`로 사용합니다. 파일이 없으면 빈 객체(`{}`)로 폴백합니다. **새 논문 추가 시 스크립트 수정 불필요** — `.meta.json`만 추가하면 됩니다.
 
 `build_qna_html.js`는 input-relative 경로를 사용:
 - output 기본값: `<input_dir>/<input_basename>.html` (입력과 같은 디렉토리)
@@ -81,26 +88,29 @@ node D:/MyProjects/PaperTranslation/tools/build_qna_html.js "D:/MyProjects/Cloth
 
 ### 이미지 삽입 방식
 
-이미지는 Markdown 본문에 직접 삽입하지 않습니다. 대신 `build_qna_html.js`의 `SECTION_META` 매핑을 통해 각 섹션에 자동으로 삽입됩니다.
+이미지는 Markdown 본문에 직접 삽입하지 않습니다. 대신 `<input_basename>.meta.json` 파일의 섹션 매핑을 통해 각 섹션에 자동으로 삽입됩니다.
 
-```js
-const SECTION_META = {
-  1: {
-    svg: null,                    // SVG 파일명 (null이면 없음)
-    png: 'sd_constraints.png',    // PNG 파일명 (null이면 없음)
-    svgCaption: null,             // SVG 캡션
-    title: '등식/부등식 제약',     // 섹션 제목 (alt 텍스트용)
+**파일 위치:** `ClothSimulation/qna/<paper>_QnA.meta.json` (QnA 파일과 동일 디렉토리)
+
+```json
+{
+  "1": {
+    "svg": null,
+    "png": "sd_constraints.png",
+    "svgCaption": null,
+    "title": "등식/부등식 제약"
   },
-  4: {
-    svg: 'winged_triangle_pair.svg',
-    png: null,
-    svgCaption: '날개형 삼각형 쌍 (Winged Triangle Pair)',
-    title: '삼각형 메시 확장과 날개형 삼각형 쌍',
-    threejs: 'winged_triangle_pair',  // Three.js 3D 뷰 (아래 참조)
-  },
-  // ...
-};
+  "4": {
+    "svg": "winged_triangle_pair.svg",
+    "png": null,
+    "svgCaption": "날개형 삼각형 쌍 (Winged Triangle Pair)",
+    "title": "삼각형 메시 확장과 날개형 삼각형 쌍",
+    "threejs": "winged_triangle_pair"
+  }
+}
 ```
+
+**주의:** JSON 키는 반드시 **문자열** 형식 (`"1"`, `"4"`)이어야 합니다 (JS 객체의 숫자 키와 다름).
 
 - SVG: `<div class="diagram">` 안에 인라인 SVG + `<figcaption>`으로 삽입
 - PNG: `<div class="illustration">` 안에 base64 data URI `<img>`로 삽입
@@ -171,8 +181,8 @@ curl -o vendor/OrbitControls.js "https://cdn.jsdelivr.net/npm/three@0.137.5/exam
 curl -L -o vendor/mathjax-tex-svg.js "https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"
 ```
 
-**장면 추가 방법:**
-1. `SECTION_META`에 `threejs: '<scene_id>'` 필드 추가
+**Three.js 장면 추가 방법:**
+1. `<paper>_QnA.meta.json`에 `"threejs": "<scene_id>"` 필드 추가
 2. `buildThreejsHtml()` → `buildQ<N>Scene()` 분기 추가
 3. `buildQ<N>Scene(canvasId)` 함수 작성 — Three.js 장면 초기화 JS 문자열 반환
 
@@ -197,7 +207,7 @@ curl -L -o vendor/mathjax-tex-svg.js "https://cdn.jsdelivr.net/npm/mathjax@3/es5
 | 공유 씬 | `winged_triangle_pair` | `buildInteractiveScene()` 래퍼 사용, opts로 라벨/법선/그래디언트 토글 |
 | 독립 씬 | `arccos_reflection` | 고유 UI(토글 버튼 등)가 필요할 때 별도 함수, `buildThreejsHtml()`에서 추가 요소 분기 |
 
-구체적인 scene_id 목록과 매핑은 `build_qna_html.js`의 `SECTION_META`와 `buildThreejsHtml()` 분기를 참조.
+구체적인 scene_id 목록과 매핑은 `<paper>_QnA.meta.json`과 `buildThreejsHtml()` 분기를 참조.
 
 ### Canvas2D 인터랙티브 뷰 — 2D 개념의 슬라이더 기반 시각화
 
@@ -211,8 +221,8 @@ curl -L -o vendor/mathjax-tex-svg.js "https://cdn.jsdelivr.net/npm/mathjax@3/es5
 - HTML `<canvas>` + 인라인 `<script>` (IIFE 패턴)
 - 자체 완결: 외부 라이브러리 없이 동작
 
-**장면 추가 방법:**
-1. `SECTION_META`에 `canvas2d: '<scene_id>'` 필드 추가
+**Canvas2D 장면 추가 방법:**
+1. `<paper>_QnA.meta.json`에 `"canvas2d": "<scene_id>"` 필드 추가
 2. `buildCanvas2dHtml()` 내부에 scene_id 분기 추가
 3. `build<SceneName>Scene(canvasId, sliderId, valId)` 함수 작성 — Canvas2D 장면 초기화 JS 문자열 반환
 
@@ -230,7 +240,7 @@ curl -L -o vendor/mathjax-tex-svg.js "https://cdn.jsdelivr.net/npm/mathjax@3/es5
 |----------|------|------|
 | `gradient_direction` | Q10 | f(x,y)=x²+y² 등고선, ∇f 화살표, 방향 d 슬라이더, cos θ / D_d f 실시간 표시 |
 
-구체적인 매핑은 `build_qna_html.js`의 `SECTION_META`와 `buildCanvas2dHtml()` 분기를 참조.
+구체적인 매핑은 `<paper>_QnA.meta.json`과 `buildCanvas2dHtml()` 분기를 참조.
 
 **환경:**
 - **Forge WebUI** (NOT AUTOMATIC1111 — Stability-AI 레포 삭제됨)
@@ -306,10 +316,11 @@ node D:/MyProjects/PaperTranslation/tools/build_qna_html.js input.md output.html
 - MathJax v3 tex-svg 인라인 (오프라인, `vendor/mathjax-tex-svg.js` — SVG 출력은 외부 폰트 불필요)
 - 반응형 CSS 내장
 
-**`SECTION_META` 수정 시 주의:**
-- 새 섹션 추가 시 번호와 이미지 파일명 매핑 필수
+**`meta.json` 수정 시 주의:**
+- 새 섹션 추가 시 키는 **문자열** (`"1"`, `"4"`) — JS 숫자 키와 다름
 - `svg` 또는 `png`가 `null`이면 해당 유형 생략
 - 이미지 파일이 없어도 에러 없이 조용히 무시 (Silent skip)
+- 새 논문 추가 시 스크립트 수정 없이 `<paper>_QnA.meta.json`만 생성하면 됨
 
 ### generate_images.js
 
@@ -365,15 +376,18 @@ node D:/MyProjects/PaperTranslation/tools/generate_images.js --name sd_cloth_buc
 
 ### 5단계: HTML 빌드
 
-1. `PaperTranslation/tools/build_qna_html.js`의 `SECTION_META`에 이미지 매핑 추가/수정
-2. `node D:/MyProjects/PaperTranslation/tools/build_qna_html.js "D:/MyProjects/ClothSimulation/qna/논문_QnA.md"` 실행
-3. `ClothSimulation/qna/논문_QnA.html`을 브라우저에서 확인
+1. `ClothSimulation/qna/<paper>_QnA.meta.json`에 이미지 매핑 추가/수정
+2. 빌드 실행:
+   ```bash
+   node D:/MyProjects/PaperTranslation/tools/build_qna_html.js "D:/MyProjects/ClothSimulation/qna/<paper>_QnA.md"
+   ```
+3. 출력 HTML을 브라우저에서 확인
 
 ### 6단계: Three.js 3D 뷰 추가 (선택)
 
 기하학적 구조가 있는 섹션에 인터랙티브 3D 뷰를 추가할 때:
 
-1. `SECTION_META`에 `threejs: '<scene_id>'` 필드 추가
+1. `<paper>_QnA.meta.json` 해당 섹션에 `"threejs": "<scene_id>"` 필드 추가
 2. `buildThreejsHtml()` 내부에 scene_id 분기 추가
 3. `buildQ<N>Scene(canvasId)` 함수 작성 (Three.js 장면 JS 문자열)
 4. 빌드 실행 → HTML에 SVG 아래 `<canvas>` + `<script>` 자동 삽입 확인
@@ -384,7 +398,7 @@ node D:/MyProjects/PaperTranslation/tools/generate_images.js --name sd_cloth_buc
 
 2D 개념에 슬라이더 기반 실시간 시각화를 추가할 때:
 
-1. `SECTION_META`에 `canvas2d: '<scene_id>'` 필드 추가
+1. `<paper>_QnA.meta.json` 해당 섹션에 `"canvas2d": "<scene_id>"` 필드 추가
 2. `buildCanvas2dHtml()` 내부에 scene_id 분기 추가
 3. `build<SceneName>Scene(canvasId, sliderId, valId)` 함수 작성 (Canvas2D 장면 JS 문자열)
 4. 빌드 실행 → HTML에 `<canvas>` + `<script>` 자동 삽입 확인
@@ -393,7 +407,8 @@ node D:/MyProjects/PaperTranslation/tools/generate_images.js --name sd_cloth_buc
 
 ### 7단계: 반복 개선
 
-- Q&A 내용 수정 → `ClothSimulation/qna/논문_QnA.md` 편집 → 5단계 재실행
+- Q&A 내용 수정 → `<paper>_QnA.md` 편집 → 5단계 재실행
+- 이미지 매핑 수정 → `<paper>_QnA.meta.json` 편집 → 5단계 재실행
 - SVG 수정 → `ClothSimulation/qna/images/*.svg` 편집 → 5단계 재실행
 - SD 이미지 재생성 → 4단계 → 5단계 재실행
 
@@ -415,9 +430,13 @@ D:\MyProjects\
     ├── *.pdf                         # 원본 논문
     ├── translated/                   # 번역 출력물 (HTML + PDF)
     └── qna\                          # Q&A 문서 프로젝트
-        ├── 논문_QnA.md               # Q&A Markdown 원본
-        ├── 논문_QnA.html             # 최종 자체 완결형 HTML (빌드 출력)
-        └── images/                   # 이미지 저장소 (*.svg, *.png)
+        ├── 논문_QnA.md               # Bending 논문 Q&A Markdown
+        ├── 논문_QnA.meta.json        # Bending 논문 섹션 이미지 매핑
+        ├── 논문_QnA.html             # Bending 논문 빌드 출력
+        ├── PBD_QnA.md                # PBD 논문 Q&A Markdown
+        ├── PBD_QnA.meta.json         # PBD 논문 섹션 이미지 매핑
+        ├── PBD_QnA.html              # PBD 논문 빌드 출력
+        └── images/                   # 이미지 저장소 (논문 간 공유, *.svg, *.png)
 ```
 
 ## 전제 조건
