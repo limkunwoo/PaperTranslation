@@ -1303,6 +1303,55 @@ ${sceneCode}
 }
 
 // ---------------------------------------------------------------------------
+// Graphviz (DOT) — build-time rendering via @hpcc-js/wasm-graphviz
+// ---------------------------------------------------------------------------
+let graphvizInstance = null;
+
+async function ensureGraphviz() {
+  if (graphvizInstance) return graphvizInstance;
+  try {
+    const { Graphviz } = require('@hpcc-js/wasm-graphviz');
+    graphvizInstance = await Graphviz.load();
+    console.log('[build_qna_html] Graphviz WASM loaded');
+    return graphvizInstance;
+  } catch (e) {
+    console.warn('[build_qna_html] @hpcc-js/wasm-graphviz not available:', e.message);
+    return null;
+  }
+}
+
+async function buildGraphvizHtml(sectionNum) {
+  const meta = SECTION_META[sectionNum];
+  if (!meta || !meta.graphviz) return '';
+
+  const sceneId = meta.graphviz;
+  const scene = loadScene(sceneId);
+  if (!scene || scene.type !== 'graphviz' || !scene.dot) {
+    console.warn(`[build_qna_html] Graphviz scene '${sceneId}' not found or missing dot source`);
+    return '';
+  }
+
+  const gv = await ensureGraphviz();
+  if (!gv) {
+    console.warn(`[build_qna_html] Graphviz WASM not loaded — skipping section ${sectionNum}`);
+    return '';
+  }
+
+  let svg = gv.dot(scene.dot);
+  // Remove XML declaration and DOCTYPE
+  svg = svg.replace(/<\?xml[^?]*\?>\s*/g, '').replace(/<!DOCTYPE[^>]*>\s*/g, '').trim();
+
+  const captionText = meta.svgCaption || '';
+
+  return `<div class="graphviz-wrapper">
+<div class="graphviz-container" style="overflow:auto; text-align:center;">
+${svg}
+</div>
+${captionText ? `<figcaption>${captionText}</figcaption>` : ''}
+</div>`;
+}
+
+// ---------------------------------------------------------------------------
 // HTML template
 // ---------------------------------------------------------------------------
 function buildHtml(title, subtitle, tocHtml, sectionsHtml) {
@@ -1597,6 +1646,15 @@ strong { color: #1a3a6e; }
   border-top: 1px solid #eee;
 }
 
+/* ---- Graphviz (build-time rendered) ---- */
+.graphviz-wrapper {
+  text-align: center; margin: 1.5em 0; background: white;
+  border: 1px solid #e0e0e0; border-radius: 8px; padding: 1em;
+}
+.graphviz-container svg {
+  max-width: 100%; height: auto;
+}
+
 /* ---- Responsive ---- */
 @media (max-width: 640px) {
   body { padding: 1em; }
@@ -1629,7 +1687,7 @@ ${sectionsHtml}
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
-function main() {
+async function main() {
   // Read input
   const md = fs.readFileSync(inputPath, 'utf-8');
   console.log(`[build_qna_html] Reading: ${inputPath}`);
@@ -1649,22 +1707,20 @@ function main() {
   const tocHtml = `<div class="toc">\n<h2>목차</h2>\n<ol>\n${tocItems}\n</ol>\n</div>`;
 
   // Build section HTML
-  const sectionsHtml = sections
-    .map((s) => {
+  const sectionParts = [];
+  for (const s of sections) {
       const diagramHtml = buildDiagramHtml(s.num);
       const threejsHtml = buildThreejsHtml(s.num);
       const canvas2dHtml = buildCanvas2dHtml(s.num);
       const d3treeHtml = buildD3TreeHtml(s.num);
+      const graphvizHtml = await buildGraphvizHtml(s.num);
       const bodyHtml = markdownToHtml(s.body);
 
       // Insert diagram HTML right after the answer heading if present.
-      // Three.js canvas goes right after the diagram(s).
-      // Canvas2D goes after Three.js.
-      // D3 Tree goes after Canvas2D.
       let combined;
       const answerHeadingTag = '<h3>답변</h3>';
       const answerIdx = bodyHtml.indexOf(answerHeadingTag);
-      const mediaHtml = [diagramHtml, threejsHtml, canvas2dHtml, d3treeHtml].filter(Boolean).join('\n');
+      const mediaHtml = [diagramHtml, threejsHtml, canvas2dHtml, d3treeHtml, graphvizHtml].filter(Boolean).join('\n');
       if (answerIdx >= 0 && mediaHtml) {
         const insertPos = answerIdx + answerHeadingTag.length;
         combined =
@@ -1677,14 +1733,14 @@ function main() {
         combined = bodyHtml + (mediaHtml ? '\n' + mediaHtml : '');
       }
 
-      return (
+      sectionParts.push(
         `<section id="section-${s.num}">\n` +
         `<h2>${s.num}. ${escapeHtml(s.heading)}</h2>\n` +
         combined +
         '\n</section>'
       );
-    })
-    .join('\n\n');
+  }
+  const sectionsHtml = sectionParts.join('\n\n');
 
   // Assemble
   const html = buildHtml(title, subtitle, tocHtml, sectionsHtml);
@@ -1700,4 +1756,4 @@ function main() {
   console.log(`[build_qna_html] Size: ${(Buffer.byteLength(html, 'utf-8') / 1024).toFixed(1)} KB`);
 }
 
-main();
+main().catch(err => { console.error(err); process.exit(1); });
