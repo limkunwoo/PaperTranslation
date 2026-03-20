@@ -1342,13 +1342,15 @@ async function buildGraphvizHtml(sectionNum) {
   svg = svg.replace(/<\?xml[^?]*\?>\s*/g, '').replace(/<!DOCTYPE[^>]*>\s*/g, '').trim();
 
   const captionText = meta.svgCaption || '';
+  const pzId = `gv-pz-${sectionNum}`;
 
   return `<div class="graphviz-wrapper">
-<div class="graphviz-container" style="overflow:auto; text-align:center;">
+<div class="svg-pz-wrap" id="${pzId}">
 ${svg}
 </div>
 ${captionText ? `<figcaption>${captionText}</figcaption>` : ''}
-</div>`;
+</div>
+${buildSvgPanZoomScript(pzId)}`;
 }
 
 // ---------------------------------------------------------------------------
