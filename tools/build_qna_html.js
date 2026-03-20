@@ -190,12 +190,18 @@ window.D3Tree = {
     x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
     var vw = x1 - x0, vh = y1 - y0;
 
+    // When the tree is wide relative to tall, a tight max-height shrinks
+    // everything.  Scale max-height to the aspect ratio so that single-panel
+    // (wide) trees are not squashed.
+    var aspect = vw > 0 ? vh / vw : 1;
+    var maxH = Math.max(420, Math.round(900 * aspect));
+
     var svg = d3.select(container).append('svg')
       .attr('viewBox', x0 + ' ' + y0 + ' ' + vw + ' ' + vh)
       .style('width', '100%')
       .style('height', 'auto')
       .style('min-height', '180px')
-      .style('max-height', '420px')
+      .style('max-height', maxH + 'px')
       .style('cursor', 'grab');
 
     var g = svg.append('g');
