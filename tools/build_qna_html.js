@@ -1371,12 +1371,13 @@ h3 { color: #555; }
 
 /* ---- Code ---- */
 .code-block {
-  background: #f5f5f5; border: 1px solid #ddd;
-  border-radius: 6px; padding: 1em; overflow-x: auto;
-  font-family: 'Consolas', 'Courier New', monospace;
-  font-size: 0.9em; margin: 1em 0; white-space: pre;
+  background: #fafbfc; border-left: 4px solid #3a7bd5;
+  border-radius: 0 6px 6px 0; padding: 1em 1.2em; overflow-x: auto;
+  font-family: 'Cascadia Code', 'Consolas', 'Fira Code', 'Courier New', monospace;
+  font-size: 0.88em; margin: 1em 0; white-space: pre;
+  color: #1e293b; line-height: 1.6;
 }
-.code-block pre { margin: 0; white-space: pre; }
+.code-block pre { margin: 0; white-space: pre; color: inherit; }
 
 /* ---- Math block (MathJax-rendered, no <pre>) ---- */
 .math-block {
