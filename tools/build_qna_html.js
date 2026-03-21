@@ -347,18 +347,27 @@ function markdownToHtml(md) {
   while (i < lines.length) {
     const line = lines[i];
 
-    // --- Fenced code block (or ```math block) ---
+    // --- Fenced code block (or ```math / ```dot block) ---
     if (line.trimStart().startsWith('```')) {
       const lang = line.trimStart().slice(3).trim().toLowerCase();
       i++;
       const codeLines = [];
       while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
-        codeLines.push(lang === 'math' ? lines[i] : escapeHtml(lines[i]));
+        codeLines.push((lang === 'math' || lang === 'dot') ? lines[i] : escapeHtml(lines[i]));
         i++;
       }
       i++; // skip closing ```
       if (lang === 'math') {
         out.push(`<div class="math-block">${inlineMarkdown(codeLines.join('\n'))}</div>`);
+      } else if (lang === 'dot' && graphvizInstance) {
+        try {
+          let svg = graphvizInstance.dot(codeLines.join('\n'));
+          svg = svg.replace(/<\?xml[^?]*\?>\s*/g, '').replace(/<!DOCTYPE[^>]*>\s*/g, '').trim();
+          out.push(`<div class="diagram"><div class="svg-pz-wrap">\n${svg}\n</div></div>`);
+        } catch (e) {
+          console.warn('[build_qna_html] Inline DOT render error:', e.message);
+          out.push(`<div class="code-block"><pre>${codeLines.map(l => escapeHtml(l)).join('\n')}</pre></div>`);
+        }
       } else {
         out.push(`<div class="code-block"><pre>${codeLines.join('\n')}</pre></div>`);
       }
@@ -477,18 +486,29 @@ function convertAnswerBody(md) {
       continue;
     }
 
-    // --- Fenced code block (or ```math block) ---
+    // --- Fenced code block (or ```math / ```dot / ```rawhtml block) ---
     if (line.trimStart().startsWith('```')) {
       const lang = line.trimStart().slice(3).trim().toLowerCase();
       i++;
       const codeLines = [];
       while (i < lines.length && !lines[i].trimStart().startsWith('```')) {
-        codeLines.push(lang === 'math' ? lines[i] : escapeHtml(lines[i]));
+        codeLines.push((lang === 'math' || lang === 'dot' || lang === 'rawhtml') ? lines[i] : escapeHtml(lines[i]));
         i++;
       }
       i++; // skip closing ```
       if (lang === 'math') {
         out.push(`<div class="math-block">${inlineMarkdown(codeLines.join('\n'))}</div>`);
+      } else if (lang === 'dot' && graphvizInstance) {
+        try {
+          let svg = graphvizInstance.dot(codeLines.join('\n'));
+          svg = svg.replace(/<\?xml[^?]*\?>\s*/g, '').replace(/<!DOCTYPE[^>]*>\s*/g, '').trim();
+          out.push(`<div class="diagram"><div class="svg-pz-wrap">\n${svg}\n</div></div>`);
+        } catch (e) {
+          console.warn('[build_qna_html] Inline DOT render error:', e.message);
+          out.push(`<div class="code-block"><pre>${codeLines.map(l => escapeHtml(l)).join('\n')}</pre></div>`);
+        }
+      } else if (lang === 'rawhtml') {
+        out.push(codeLines.join('\n'));
       } else {
         out.push(`<div class="code-block"><pre>${codeLines.join('\n')}</pre></div>`);
       }
@@ -1371,13 +1391,17 @@ h3 { color: #555; }
 
 /* ---- Code ---- */
 .code-block {
-  background: #fafbfc; border-left: 4px solid #3a7bd5;
-  border-radius: 0 6px 6px 0; padding: 1em 1.2em; overflow-x: auto;
-  font-family: 'Cascadia Code', 'Consolas', 'Fira Code', 'Courier New', monospace;
-  font-size: 0.88em; margin: 1em 0; white-space: pre;
-  color: #1e293b; line-height: 1.6;
+  background: #0d1117; border-left: 4px solid #3a7bd5;
+  border-radius: 0 6px 6px 0; padding: 16px 20px; overflow-x: auto;
+  font-family: 'Cascadia Code', 'Consolas', 'Fira Code', monospace;
+  font-size: 13.5px; margin: 1em 0; white-space: pre;
+  color: #a9dc76; line-height: 1.6; font-weight: 500;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-.code-block pre { margin: 0; white-space: pre; color: inherit; }
+.code-block pre { margin: 0; white-space: pre; color: inherit;
+  -webkit-font-smoothing: antialiased;
+}
 
 /* ---- Math block (MathJax-rendered, no <pre>) ---- */
 .math-block {
@@ -1408,7 +1432,7 @@ tr:nth-child(even) { background: #fafafa; }
   overflow: hidden; position: relative;
   border-radius: 4px;
 }
-.svg-pz-wrap svg { display: block; max-width: 100%; height: auto; }
+.svg-pz-wrap svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 figcaption {
   font-size: 0.9em; color: #666;
   margin-top: 0.5em; font-style: italic;
@@ -1646,6 +1670,9 @@ async function main() {
   const { title, subtitle } = parseIntro(md);
   const sections = parseSections(md);
   console.log(`[build_qna_html] Found ${sections.length} sections`);
+
+  // Pre-load Graphviz for inline ```dot blocks
+  await ensureGraphviz();
 
   // Build Table of Contents
   const tocItems = sections
