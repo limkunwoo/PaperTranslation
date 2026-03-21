@@ -700,67 +700,10 @@ function parseIntro(md) {
  * to the SVG inside the wrapper element with id `wrapperId`.
  * No external libraries required.
  */
-function buildSvgPanZoomScript(wrapperId) {
-  return `<script>
-(function() {
-  var wrap = document.getElementById('${wrapperId}');
-  if (!wrap) return;
-  var svg = wrap.querySelector('svg');
-  if (!svg) return;
-
-  // Ensure SVG fills the wrapper but stays bounded
-  svg.style.display = 'block';
-  svg.style.maxWidth = '100%';
-  svg.style.cursor = 'grab';
-
-  // State
-  var scale = 1, panX = 0, panY = 0;
-  var dragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
-
-  function applyTransform() {
-    svg.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
-    svg.style.transformOrigin = '0 0';
-  }
-
-  // Wheel zoom (centred on cursor position relative to wrapper)
-  wrap.addEventListener('wheel', function(e) {
-    e.preventDefault();
-    var rect = wrap.getBoundingClientRect();
-    var mx = e.clientX - rect.left - panX;
-    var my = e.clientY - rect.top  - panY;
-    var delta = e.deltaY < 0 ? 1.12 : 1 / 1.12;
-    var newScale = Math.min(Math.max(scale * delta, 0.3), 8);
-    panX -= mx * (newScale - scale);
-    panY -= my * (newScale - scale);
-    scale = newScale;
-    applyTransform();
-  }, { passive: false });
-
-  // Drag pan
-  wrap.addEventListener('mousedown', function(e) {
-    if (e.button !== 0) return;
-    dragging = true;
-    startX = e.clientX; startY = e.clientY;
-    startPanX = panX; startPanY = panY;
-    svg.style.cursor = 'grabbing';
-  });
-  window.addEventListener('mousemove', function(e) {
-    if (!dragging) return;
-    panX = startPanX + (e.clientX - startX);
-    panY = startPanY + (e.clientY - startY);
-    applyTransform();
-  });
-  window.addEventListener('mouseup', function() {
-    if (dragging) { dragging = false; svg.style.cursor = 'grab'; }
-  });
-
-  // Double-click to reset
-  wrap.addEventListener('dblclick', function() {
-    scale = 1; panX = 0; panY = 0;
-    applyTransform();
-  });
-})();
-</script>`;
+function buildSvgPanZoomScript(/* wrapperId */) {
+  // Pan/zoom disabled — wheel events were hijacking page scroll (UX issue).
+  // SVGs display fine with CSS max-width:100%; no runtime zoom needed.
+  return '';
 }
 
 // ---------------------------------------------------------------------------
@@ -1459,14 +1402,12 @@ tr:nth-child(even) { background: #fafafa; }
 }
 .diagram svg { max-width: 100%; height: auto; }
 
-/* ---- SVG pan/zoom wrapper ---- */
+/* ---- SVG wrapper (pan/zoom removed — was hijacking page scroll) ---- */
 .svg-pz-wrap {
   overflow: hidden; position: relative;
-  cursor: grab; border-radius: 4px;
-  user-select: none; -webkit-user-select: none;
+  border-radius: 4px;
 }
-.svg-pz-wrap:active { cursor: grabbing; }
-.svg-pz-wrap svg { display: block; max-width: 100%; transition: none; }
+.svg-pz-wrap svg { display: block; max-width: 100%; height: auto; }
 figcaption {
   font-size: 0.9em; color: #666;
   margin-top: 0.5em; font-style: italic;
